@@ -5,9 +5,9 @@
 
 This demonstrates the [discrete Hilbert transform][H] by using it to implement a true frequency shifter, i.e. one that does not rely on grains, or other destructive algorithms, and hence preserves the original waveform and its spectrum.
 
-**NB**: currently mono only.
+*NB*: currently mono only.
 
-#### Signals:
+**Signals:**
 
   - Audio in L :  audio input
   - Audio out L : echoes the input
