@@ -41,6 +41,8 @@ ne10_fir_instance_f32_t filter;
 nfloat normaliser;
 nfloat *input;
 nfloat *output;
+nfloat *re;
+nfloat *im;
 ncomplex *inter;
 
 
@@ -90,6 +92,8 @@ bool setup(BelaContext *context, void *userData)
 	state=get<nfloat>(FILTER_TAP_NUM+blockSize-1);
 	input=get<nfloat>(blockSize);
 	output=get<nfloat>(blockSize);
+	re=get<nfloat>(blockSize);
+	im=get<nfloat>(blockSize);
 	shifter=get<ncomplex>(blockSize);
 	taps=get<nfloat>(FILTER_TAP_NUM);
 	inter=new ncomplex[blockSize];
@@ -115,7 +119,7 @@ bool setup(BelaContext *context, void *userData)
 
 void render(BelaContext *context, void *userData)
 {
-	shiftFreq = (analogRead(context,0,0)) * 4000.0;
+	shiftFreq = (analogRead(context,0,0)-0.5) * 8000.0;
 	auto nSamples = context->audioFrames;
 	for(unsigned n = 0; n < nSamples; n++) {
 		input[n] = audioRead(context,n,0);
@@ -130,6 +134,11 @@ void render(BelaContext *context, void *userData)
 	for(auto i=0;i<nSamples;i++) {
 		inter[i]=ncomplex(input[i],output[i]) * shifter[i];
 	}
+	
+	
+	// now get rid of negative frequencies
+	
+	
 	
 	for(unsigned n=0;n<blockSize;n++) {
 		scope.log(input[n],inter[n].real(),shifter[n].real());
