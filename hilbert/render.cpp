@@ -37,18 +37,18 @@ typedef std::complex<ne10_float32_t> ncomplex;
 
 
 // filter vars
-ne10_fir_instance_f32_t filter;
-nfloat normaliser;
+ne10_fir_instance_f32_t hilbertFilter;
+nfloat *hilbertTaps;
+nfloat *hilbertState;
+ne10_fir_instance_f32_t delayFilter;
+nfloat *delayTaps;
+nfloat *delayState;
+
 nfloat *input;
-nfloat *output;
-nfloat *re;
-nfloat *im;
+nfloat *imag;
+nfloat *delayed;
+
 ncomplex *inter;
-
-
-
-nfloat *state;
-nfloat *taps;
 ncomplex *shifter;
 
 #define NSTAGES 66
@@ -65,7 +65,7 @@ unsigned blockSize;
 unsigned nChannels;
 
 nfloat phase;
-nuint offset=0;
+//nuint offset=0;
 nfloat invSampleRate;
 nfloat shiftInvSampleRate;
 nfloat shiftPhase=0;
@@ -75,8 +75,9 @@ nfloat shiftFreq;
 Scope scope;
 
 void toComplex() {
-	ne10_fir_float_neon(&filter, input, output, blockSize);
-	for(auto i=0;i<blockSize;i++) inter[i]=ncomplex(input[i]*.68,output[i]*.62);
+	ne10_fir_float_neon(&hilbertFilter, input, imag, blockSize);
+	ne10_fir_float_neon(&delayFilter, input, delayed, blockSize);
+	for(auto i=0;i<blockSize;i++) inter[i]=ncomplex(input[i],delayed[i]);
 }
 
 
@@ -85,34 +86,38 @@ bool setup(BelaContext *context, void *userData)
 	// Retrieve a parameter passed in from the initAudio() call
 	
 	// tell the scope how many channels and the sample rate
-	scope.setup(3, context->audioSampleRate);
+	scope.setup(2, context->audioSampleRate);
 
 	blockSize = context->audioFrames;
 	nChannels = context -> audioOutChannels;
-	state=get<nfloat>(FILTER_TAP_NUM+blockSize-1);
+	
 	input=get<nfloat>(blockSize);
-	output=get<nfloat>(blockSize);
-	re=get<nfloat>(blockSize);
-	im=get<nfloat>(blockSize);
+	imag=get<nfloat>(blockSize);
+	delayed=get<nfloat>(blockSize);
+	
 	shifter=get<ncomplex>(blockSize);
-	taps=get<nfloat>(FILTER_TAP_NUM);
+	
 	inter=new ncomplex[blockSize];
 	
-	nfloat norm = 0.0;
+	hilbertTaps=get<nfloat>(FILTER_TAP_NUM);
 	for(nuint i=0;i<NSTAGES;i++) {
 		nfloat value = (0==(i&1)) ? 0.0 : 2.0/(M_PI*i);
-		taps[NSTAGES+i]=value;
-		taps[NSTAGES-i]=-value;
-		norm+=value;
+		hilbertTaps[NSTAGES+i]=value;
+		hilbertTaps[NSTAGES-i]=-value;
 	}
-	normaliser=1.0/norm;
-	ne10_fir_init_float(&filter, FILTER_TAP_NUM, taps, state, blockSize);
+	hilbertState=get<nfloat>(FILTER_TAP_NUM+blockSize-1);
+	ne10_fir_init_float(&hilbertFilter, FILTER_TAP_NUM, hilbertTaps, hilbertState, blockSize);
+	
+	delayTaps=get<nfloat>(FILTER_TAP_NUM);
+	for(nuint i=0;i<FILTER_TAP_NUM;i++) {
+		delayTaps[i] = (i==NSTAGES) ? 1.0 : 0.0;
+	}
+	delayState=get<nfloat>(FILTER_TAP_NUM+blockSize-1);
+	ne10_fir_init_float(&delayFilter, FILTER_TAP_NUM, delayTaps, delayState, blockSize);
 
 	shiftFreq = 1000.0 * analogRead(context,0,0);
 	invSampleRate = 2.0*(nfloat)M_PI*FREQ/(nfloat)context->audioSampleRate;
 	shiftInvSampleRate = 2.0*(nfloat)M_PI/(nfloat)context->audioSampleRate;
-	offset = 0;
-
 
 	return true;
 }
@@ -130,18 +135,14 @@ void render(BelaContext *context, void *userData)
 		while (shiftPhase < -M_PI) shiftPhase += 2.0f * (nfloat)M_PI;
 		
 	}
-	ne10_fir_float_neon(&filter, input, output, blockSize);
+	ne10_fir_float_neon(&hilbertFilter, input, imag, blockSize);
+	ne10_fir_float_neon(&delayFilter, input, delayed, blockSize);
 	for(auto i=0;i<nSamples;i++) {
-		inter[i]=ncomplex(input[i],output[i]) * shifter[i];
+		inter[i]=ncomplex(imag[i],delayed[i]) * shifter[i];
 	}
-	
-	
-	// now get rid of negative frequencies
-	
-	
-	
+
 	for(unsigned n=0;n<blockSize;n++) {
-		scope.log(input[n],inter[n].real(),shifter[n].real());
+		scope.log(input[n],inter[n].real());
 		audioWrite(context, n, 0, input[n]);
 		audioWrite(context, n, 1, inter[n].real());
 	}
@@ -152,10 +153,12 @@ void render(BelaContext *context, void *userData)
 
 void cleanup(BelaContext *context, void *userData)
 {
-	NE10_FREE(taps);
-	NE10_FREE(state);
+	NE10_FREE(hilbertTaps);
+	NE10_FREE(hilbertState);
+	NE10_FREE(delayTaps);
+	NE10_FREE(delayState);
 	NE10_FREE(input);
-	NE10_FREE(output);
+	NE10_FREE(imag);
 	NE10_FREE(shifter);
 	delete[] inter;
 }
